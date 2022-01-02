@@ -1,11 +1,11 @@
 # The directory where exitwp looks for wordpress export xml files.
-wp_exports: wordpress-xml
+wp_exports_dir: wordpress-xml
 
 # The target directory where all output is saved.
 build_dir: build
 
 # Output format: primary choices are html or markdown.
-target_format: markdown
+target_format: md
 
 # The date format of the wikipedia export file.
 # I'm not sure if this ever differs depending on wordpress localization.
@@ -13,7 +13,13 @@ target_format: markdown
 date_format: '%Y-%m-%d %H:%M:%S'
 
 # Try to download and reloacate all images locally to the blog.
-download_images: False
+download_images: True
+
+# Toggle saving photos into flat or hierarchical folder structure
+use_hierarchical_folders: False
+
+# Toggle replace existing images when downloading
+replace_existing: True
 
 # Item types we don't want to import.
 item_type_filter: {attachment, nav_menu_item}
@@ -36,7 +42,6 @@ body_replace: {
   # '<pre.*?lang="(.*?)".*?>': '\n{% codeblock \1 lang:\1 %}\n',
   # '<pre.*?>': '\n{% codeblock %}\n',
   # '</pre>': '\n{% endcodeblock %}\n',
-
-#    '[python]': '{% codeblock lang:python %}',
-#    '[/python]': '{% endcodeblock %}',
+  # '[python]': '{% codeblock lang:python %}',
+  # '[/python]': '{% endcodeblock %}',
 }
