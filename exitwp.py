@@ -13,7 +13,6 @@ import yaml
 from yaml import FullLoader
 from bs4 import BeautifulSoup
 from html2text import html2text_file
-import logging
 
 '''
 exitwp - Wordpress xml exports to Jekykll blog format conversion
@@ -141,35 +140,6 @@ def parse_header(channel: etree.Element):
     }
 
 
-# TODO: this function can be removed totally...
-# Find a <`qname`> element in <`in_item`> element.
-# `qname` stands for qualified name, but is optional.
-# Both qualified and unqualified names will work.
-def findWithTagInParent(qname, parent, unicode_wrap=True, empty=False):
-    namespace = ''
-    tag = ''
-
-    # Extract tag and namespace (if present) from the passed string.
-    if qname.find(':') > 0:
-        namespace, tag = qname.split(':', 1)
-    else:
-        tag = qname
-
-    # Try to get the TEXT node content of the element.
-    try:
-        print('qname:', qname, '; tag:', tag, '; namespace:', namespace)
-        result = (parent.find(qname, ns) or parent.find(tag) or parent.find(
-            "{" + ns[namespace] + "}" + tag)).text.strip()
-    except AttributeError:
-        result = ''
-
-    # Encode to unicode.
-    if unicode_wrap:
-        result = str(result)
-
-    return result
-
-
 # <channel> nodes contains <item> nodes (that in RSS feeds are usually
 # articles, stories, ecc). WordPress use <item> for many different kinds
 # of posts: blog-posts, attachments, ecc.
@@ -181,7 +151,6 @@ def parse_items(channel: etree.Element):
         taxonomies = parse_categories_for_item(item)
 
         # Get item body.
-        # body = findWithTagInParent('content:encoded', item)
         body = item.find('content:encoded', ns).text
 
         # Replace the keys found in body, if any, with replacement text.
@@ -201,23 +170,6 @@ def parse_items(channel: etree.Element):
             except:
                 print('could not parse html: ' + body)
 
-        # result.append({
-        #     'title': findWithTagInParent('title', item),
-        #     'link': findWithTagInParent('link', item),
-        #     'author': findWithTagInParent('dc:creator', item),
-        #     'date': findWithTagInParent('wp:post_date_gmt', item),
-        #     'description': findWithTagInParent('description', item),
-        #     'slug': findWithTagInParent('wp:post_name', item),
-        #     'status': findWithTagInParent('wp:status', item),
-        #     'type': findWithTagInParent('wp:post_type', item),
-        #     'wp_id': findWithTagInParent('wp:post_id', item),
-        #     'parent': findWithTagInParent('wp:post_parent', item),
-        #     'comments': findWithTagInParent('wp:comment_status', item) == 'open',
-        #     'taxanomies': taxonomies,
-        #     'body': body,
-        #     'excerpt': findWithTagInParent('excerpt:encoded', item, empty=True),
-        #     'img_srcs': img_srcs
-        # })
         result.append({
             'title': item.find('title').text,
             'link': item.find('link').text,
