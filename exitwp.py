@@ -13,6 +13,11 @@ import yaml
 from yaml import FullLoader
 from bs4 import BeautifulSoup
 from html2text import html2text_file
+import warnings
+
+# Suppress "...looks like a URL... " warnings from BeautifulSoup
+warnings.filterwarnings(
+    "ignore", message='.*looks like a URL.*', category=UserWarning, module='bs4')
 
 '''
 exitwp - Wordpress xml exports to Jekykll blog format conversion
@@ -71,48 +76,55 @@ class UTC(tzinfo):
         return ZERO
 
 
-def all_item_children(item: etree.Element):
-    if isinstance(item, etree.Element):
-        # for child in item.iter():
-        #     print(child.tag)
-        #     if child.text:
-        #         print(child.text)
-        post_id1 = item.find("{http://wordpress.org/export/1.2/}post_id")
-        post_id = item.find("wp:post_id", ns)
-        if post_id1 is None:
-            print('It keeps to not work!')
-        else:
-            print(post_id1.text, ns)
-        if post_id is None:
-            print('It keeps to not work!')
-        else:
-            print(post_id.text, ns)
+def are_valid_taxonomy_filters(filters: dict = None):
+    if isinstance(filters, dict) and 'domains' in filters and isinstance(filters['domains'], dict) and 'entries' in filters and isinstance(filters['entries'], dict):
+        return True
+    return False
+
+
+# TODO: check why are we usign a dictionary since the filter just test the presence of a key inside it.
+def filter_taxonomy(domain: str, text: str, filters: dict):
+    if not isinstance(domain, str) or not isinstance(text, str) or not are_valid_taxonomy_filters(filters):
+        # We cannot filter out this element therefore we return True
+        return True
+    if (not domain in filters['domains']) and not (domain in filters['entries'] and filters['entries'][domain] == text):
+        return True
+    return False
 
 
 # WordPress categories are specialized applications of taxonomies.
-def parse_categories_for_item(item: etree.Element):
+def parse_categories_for_item(item: etree.Element, filters: dict):
+    """
+        Parse all <category> elements children of the passed <item> element.
+
+        PARAMETERS
+        ----------
+
+        item: xml.etree.ElementTree.Element
+            An <item> element.
+    """
+    # TODO: is it faster to use Element.findall() or Element.iter()?
+    # Given that we have to iterate over all categories Element.iter()
+    # https://docs.python.org/3/library/xml.etree.elementtree.html#xml.etree.ElementTree.Element.iter
+    # is probably the best choice or Element.iterFind()
+    # https://docs.python.org/3/library/xml.etree.elementtree.html#xml.etree.ElementTree.Element.iterfind
+    # For examples of Xpath paths see https://docs.python.org/3/library/xml.etree.elementtree.html#example
     categories = item.findall('category')
     result = {}
 
     for category in categories:
-        # Skip if category does not have a `domain` XML attribute.
+        # Skip current category doesn't have any `domain` attribute.
         if 'domain' not in category.attrib:
             continue
 
+        # Get categody domain and category value.
         domain = str(category.attrib['domain'])
         text = str(category.text)
 
-        if (not (domain in taxonomy_filter) and
-            not (domain
-                 in taxonomy_entry_filter and
-                 taxonomy_entry_filter[domain] == text)):
+        if filter_taxonomy(domain, text, filters):
             if domain not in result:
                 result[domain] = []
             result[domain].append(text)
-
-    # print(f'Categories for item {item.find("guid").text}:', result)
-
-    # all_item_children(item)
 
     return result
 
@@ -148,7 +160,8 @@ def parse_items(channel: etree.Element):
     items = channel.findall('item')
 
     for item in items:
-        taxonomies = parse_categories_for_item(item)
+        taxonomies = parse_categories_for_item(
+            item, {'domains': taxonomy_filter, 'entries': taxonomy_entry_filter})
 
         # Get item body.
         body = item.find('content:encoded', ns).text
@@ -191,33 +204,71 @@ def parse_items(channel: etree.Element):
     return result
 
 
-def parse_wp_xml(file):
-    #print(f'Parsing {file}')
+def parse_namespaces(file):
+    namespaces = None
 
-    tree = etree.parse(file)
-    root = tree.getroot()
+    try:
+        namespaces = dict([
+            node for _, node in etree.iterparse(
+                file, events=['start-ns'])
+        ])
+    except FileNotFoundError as fnfe:
+        print("FileNotFoundError: {0}".format(fnfe))
+    except TypeError as te:
+        print("TypeError: {0}".format(te))
 
-    # Parse namespace prefixes from file
-    ns_prefixes = dict([
-        node for _, node in etree.iterparse(
-            file, events=['start-ns'])
-    ])
+    return namespaces
 
-    # Specify empty namespace
-    ns_prefixes[''] = ''
 
-    # Append parentheses around prefixes for namespaces
-    ns = {}
-    for k, v in ns_prefixes.items():
-        ns[k] = '{' + v + '}'
+class ParseBlockingError(Exception):
+    def __init__(self, expression, message):
+        self.expression = expression
+        self.message = message
 
-    # <channel> is basically the root node of WordPress export XML files.
-    channel = root.find('channel')
 
-    return {
-        'header': parse_header(channel),
-        'items': parse_items(channel),
-    }
+def parse_wp_xml(source):
+    if source == False:
+        # raise ParseBlockingError('parse_wp_xml(False)', 'crazy')
+        print('Cannot parse a False value!')
+        return None
+
+    print(f'Parsing {source}...')
+
+    global ns
+
+    tree = None
+
+    try:
+        tree = etree.parse(source)
+    except (FileNotFoundError, TypeError, etree.ParseError) as err:
+        print(f"{type(err).__name__}: {err}")
+
+    if tree:
+        root = tree.getroot()
+
+        # Parse namespace prefixes from file
+        ns = parse_namespaces(source)
+        # print('namespaces', ns)
+
+        # <channel> is like the root node in WordPress export XML files.
+        channel = root.find('channel')
+
+        return {
+            'header': parse_header(channel),
+            'items': parse_items(channel),
+        }
+
+    # In case of failure provide some informations...
+    sourceInfo = ''
+    if isinstance(source, str):
+        sourceInfo = 'from source at "' + source + '"'
+    else:
+        typeName = type(source).__name__
+        sourceInfo = 'from source of type ' + typeName
+
+    print(f'Cannot parse XML tree {sourceInfo}. Exit!')
+
+    return None
 
 
 def get_blog_path(data, path_infix='jekyll'):
@@ -542,6 +593,6 @@ for wp_export in wp_exports_paths:
     # print('data:', data)
 
     # Once done, write the jekyll output.
-    write_jekyll(data, target_format)
+    # write_jekyll(data, target_format)
 
 print('done')
